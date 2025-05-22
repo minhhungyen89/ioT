@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> Đồng hồ thông minh </title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        h1, h2 {
+            text-align: center;
+            margin: 10px 0;
+        }
+        h5{
+            margin: 0;
+             padding: 0px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+        .info {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 20px;
+            width:100%;
+        }
+        .info p {
+            margin: 5px 0;
+            font-size: 1.2em;
+        }
+
+        button {
+            padding: 10px;
+            font-size: 1em;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        canvas {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+    <h5 id="today"></h5>
+    <h2>Biểu đồ nhiệt độ và độ ẩm theo thời gian thực</h2>
+    <canvas id="chart" width="400" height="200"></canvas>
+    <h2> Điều khiển thiết bị </h2>
+        <div class="info">
+            <p>Còi: <span id="led_00"></span> </p> <button id="OnLed_00">Bật còi ( Còi kêu )</button>  <button id="OffLed_00">Tắt còi ( Còi ngừng kêu )</button> 
+            <p>Led 01: <span id="led_01"></span> </p> <button id="OnLed_01">Bật Led 01 ( Đèn 01 sáng )</button>   <button id="OffLed_01">Tắt Led 01 ( Đèn 01 tắt )</button> 
+            <p>Led 02: <span id="led_02"></span> </p>  <button id="OnLed_02">Bật Led 02 ( Đèn 02 sáng )</button> <button id="OffLed_02">Tắt Led 02 ( Đèn 02 tắt )</button> 
+            <p>Led 03: <span id="led_03"></span> </p>   <button id="OnLed_03">Bật Led 03 ( Đèn 03 sáng )</button> <button id="OffLed_03">Tắt Led 03 ( Đèn 03 tắt )</button> 
+            <p>Led 04: <span id="led_04"></span> </p>  <button id="OnLed_04">Bật Led 04 ( Đèn 04 sáng )</button> <button id="OffLed_04">Tắt Led 04 ( Đèn 04 tắt )</button> 
+            
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const socket = io('http://localhost:3000');
+            socket.onAny((event, ...args) => {
+                switch (event) {
+                    case 'connect':
+                        console.log('Connected to server');
+                        break;
+                    case 'disconnect':
+                        console.log('Disconnected from server');
+                        break;
+                    case 'error':
+                        console.error('Socket error:', ...args);
+                        break;}});
+
+            socket.on('today', (data) => {
+                document.getElementById('today').innerHTML = data.weekday + ' | ' + data.date + ' | ' + data.time;});
+            socket.on('led', (data) => {
+                for (let key in data) {
+                    const element = document.getElementById(key);
+                    if (element) {
+                        element.innerHTML = data[key] === 'on' ? '🔆 Bật' : '💤 Tắt';
+                    }
+                }
+             });
+       // Biểu đồ nhiệt độ và độ ẩm theo thời gian thực
+        const ctx = document.getElementById('chart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Nhiệt độ (°C)',
+                        data: [],
+                        borderColor: 'red',
+                        fill: false
+                    },
+                    {
+                        label: 'Độ ẩm (%)',
+                        data: [],
+                        borderColor: 'blue',
+                        fill: false
+                    }
+                ]
+            },
+            options: {
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'minute',
+                            tooltipFormat: 'yyyy-MM-dd HH:mm:ss'
+                        }
+                    },
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+        let lastTimestamp = 0; 
+        socket.on('temp', (data) => {
+        const records = Object.values(data.temp);
+        if (lastTimestamp === 0) {
+            // --- LẦN ĐẦU: VẼ TOÀN BỘ ---
+            chart.data.labels = [];
+            chart.data.datasets[0].data = [];
+
+            records.forEach(entry => {
+            const t = new Date(entry.time);
+            chart.data.labels.push(t);
+            chart.data.datasets[0].data.push(entry.temperature);
+             chart.data.datasets[1].data.push(entry.humidity);
+            });
+
+            // Cập nhật lastTimestamp
+            lastTimestamp = records[records.length - 1].time;
+            chart.update();
+        } else {
+            // --- VẼ THÊM 1 ĐIỂM MỚI ---
+            const last = records[records.length - 1];
+
+            if (last.time > lastTimestamp) {
+            const t = new Date(last.time);
+            chart.data.labels.push(t);
+            chart.data.datasets[0].data.push(last.temperature);
+            chart.data.datasets[1].data.push(last.humidity);
+            lastTimestamp = last.time;
+            if (chart.data.labels.length > 50) {
+                chart.data.labels.shift();
+                chart.data.datasets[0].data.shift();
+                chart.data.datasets[1].data.shift(); }
+            chart.update();
+            }}});
+       document.querySelectorAll('button[id^="OnLed_"], button[id^="OffLed_"]').forEach(button => {
+    button.addEventListener('click', () => {
+        const buttonId = button.id;
+        // socket.emit(buttonId);      
+    });});});
+    </script>
+</body>
+</html>
